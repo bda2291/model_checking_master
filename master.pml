@@ -3,18 +3,31 @@
 #define noMore (masters < 2)
 #define StopCondition (record_slaves_num > N/2)
 
-mtype = {occupy, free, ok, no};
+mtype = {occupy, free, ok};
 
 chan q[N+1] = [L+2] of {mtype, byte};
 
 byte masters = 0;
 byte slaves = 0;
 byte record_slaves_num = 0;
-byte node_num = 0;
+
+active proctype controller ()
+{
+	do	
+	:: atomic{
+		printf("The controller started\n");
+		if
+		:: (masters > 0) ->
+			assert(noMore);
+			assert(!StopCondition);
+		fi;
+	}
+	od;
+}
 
 proctype node (byte mynumber)
 {
-	byte number, owner, slaves_list[N], slaves_num;
+	byte number, owner, slaves_list[N], slaves_num, node_num;
 	bit master, slave;
 	int i;	
 Begin:
@@ -31,14 +44,8 @@ Begin:
 
 	end: do
 	
-	:: StopCondition -> break;
-
 	:: q[mynumber] ? ok(number) ->
 		atomic {
-		if
-                :: StopCondition -> break;
-                :: else -> skip;
-                fi;
  
 		slaves_list[slaves_num] = number;
 		slaves_num++;
@@ -55,21 +62,14 @@ Begin:
 		:: (slaves_num > N/2) ->
 			master = 1;
                 	masters++;
-                	assert(masters <= 1);
                 	printf("MSC: %d node became a master.\n Now masters: %d.\n Now slaves: %d.\n", mynumber, masters, slaves);
 			break;
 		:: else -> skip;
 		fi; 
 		}
 
-	:: q[mynumber] ? no(number) -> skip;
-
 	:: q[mynumber] ? occupy(number) ->
 		atomic {
-		if
-                :: StopCondition -> break;
-                :: else -> skip;
-                fi;
 		if
 		:: (slave == 0) -> 
 			slave = 1;
@@ -79,18 +79,12 @@ Begin:
 			q[number] ! ok(mynumber);
 			printf("MSC: %d node enslaved by %d node\n", mynumber, number);
 		:: else -> 
-			q[number] ! no(mynumber);
 			printf("MSC: %d node rejected the %d node\n", mynumber, number);
 		fi;
 		}
 
 	:: q[mynumber] ? free(number) ->
 		atomic {
-		if
-                :: StopCondition -> break;
-                :: else -> skip;
-                fi;
-
 		if
 		:: (owner == number) -> 
 			owner = 0;
@@ -100,18 +94,15 @@ Begin:
 		fi;
 		}
 
-	:: (!StopCondition) && (!len(q[mynumber])) && (slaves == N) ->
+	:: (!len(q[mynumber])) && (slaves == N) ->
 		atomic {
                 if
                 :: (slaves_num > 0) ->
-	//		printf("slaves_list itoms: %d, %d, %d\n", slaves_list[0], slaves_list[1], slaves_list[2]);
                         for (i in slaves_list) {
-	//			printf("%d : %d\n", i, slaves_list[i]);
 				node_num = slaves_list[i];
 				if 
 				:: (node_num == 0) -> skip;
 				:: else ->
-	//				printf("MSC: node_num: %d\n", node_num);
                                 	q[node_num] ! free(mynumber);
 					slaves_num--;
 					assert(slaves_num >= 0);
@@ -142,8 +133,9 @@ init {
 	od
 	}		
 }
-	
-never { /* !([] noMore) */
+
+/*	
+never {  !([] noMore)
 T0_init:
  	if
  	:: (! ((noMore))) -> goto accept_all
@@ -152,3 +144,4 @@ T0_init:
 accept_all:
  	skip
 } 
+*/
